@@ -1,0 +1,67 @@
+author: Ruihang Mliia
+'''
+import sys, platform
+import time
+import datetime
+from PIL import Image
+from math import *
+import numpy
+import os
+from data_list import *
+import numba
+import math
+from zmq_comm import *
+import pymap3d
+from jpeg_compress import *
+
+
+@numba.jit
+def reproject(imgIn,imgOutSize,init_theta):
+    inSize = imgIn.size
+    outSize = imgOutSize
+    inPix = numpy.array(imgIn)
+    outPix = numpy.zeros((outSize[1],outSize[0],3), numpy.uint8) #array's x and y is Image's opsite
+    edge = int(inSize[0]/4)   # the length of each edge in pixels
+    for i in range(outSize[0]):
+        for j in range(outSize[1]):
+            a = 2.0*i
+            b = 2.0*j
+
+            (x,y,z) = (edge, a - outSize[0], outSize[1] - b)
+              
+            theta = atan2(y,x) # range -pi to pi
+            r = hypot(x,y)
+            phi = atan2(z,r) # range -pi/2 to pi/2
+            
+            # source img coords
+            theta=(init_theta+theta)
+            if(theta>pi):
+                theta=theta-2*pi
+            elif(theta<-pi):
+                theta=theta+2*pi  
+                             
+            uf = ( 2.0*edge*(theta + pi)/pi )
+            vf = ( 2.0*edge * (pi/2 - phi)/pi)
+            # Use bilinear interpolation between the four surrounding pixels
+            ui = floor(uf)  # coord of pixel to bottom left
+            vi = floor(vf)
+            u2 = ui+1       # coords of pixel to top right
+            v2 = vi+1
+            mu = uf-ui      # fraction of way across pixel
+            nu = vf-vi
+            #Pixel values of four corners
+            x1 = int(ui % inSize[0])
+            x2 = int(u2 % inSize[0])
+            y1 = int(vi % inSize[1])
+            y2 = int(v2 % inSize[1])
+            A = inPix[y1,x1]
+            B = inPix[y1,x2]
+            C = inPix[y2,x1]
+            D = inPix[y2,x2]
+
+            # interpolate
+            outPix[j, i, 0]=A[0]*(1-mu)*(1-nu) + B[0]*(mu)*(1-nu) + C[0]*(1-mu)*nu+D[0]*mu*nu
+            outPix[j, i, 1]=A[1]*(1-mu)*(1-nu) + B[1]*(mu)*(1-nu) + C[1]*(1-mu)*nu+D[1]*mu*nu
+            outPix[j, i, 2]=A[2]*(1-mu)*(1-nu) + B[2]*(mu)*(1-nu) + C[2]*(1-mu)*nu+D[2]*mu*nu
+
+    return  Image.fromarray(outPix)#outPix
